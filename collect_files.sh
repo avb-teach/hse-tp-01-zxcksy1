@@ -1,2 +1,1 @@
-jhvhj
-yfutyg
+#!/bin/bash
