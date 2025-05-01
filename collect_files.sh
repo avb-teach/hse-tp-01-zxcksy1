@@ -1,47 +1,40 @@
-'''#!/bin/bash
-input_dir=$1
-output_dir=$2
-max_depth=""
 
-
-find "$input_dir" -type f -exec cp {} "$output_dir" \;'''
 
 #!/bin/bash
-
 input_dir="$1"
 output_dir="$2"
-max_depth=0
+max_depth=0  
 
-[[ $# -eq 4 && "$3" == "--max_depth" && "$4" =~ ^[0-9]+$ ]] && max_depth="$4"
+if [ $# -eq 4 ] && [ "$3" == "--max_depth" ] && [[ "$4" =~ ^[0-9]+$ ]]; then
+    max_depth="$4"
+fi
 
 mkdir -p "$output_dir"
 
-unique_name() {
-    local path="$1" counter=1
-    while [ -e "$path" ]; do
-        [[ "$path" =~ \.[^./]+$ ]] && path="${path%.*}_${counter}.${path##*.}" || path="${path}_${counter}"
-        ((counter++))
-    done
-    echo "$path"
-}
+find "$input_dir" -type f -print0 | while IFS= read -r -d $'\0' file; do
+    rel_path="${file#$input_dir/}"
+    depth=$(tr -cd '/' <<< "$rel_path" | wc -c)
+    depth=$((depth + 1))
 
-if [[ $max_depth -eq 0 ]]; then
-    find "$input_dir" -type f -exec sh -c '
-        for file; do
-            cp "$file" "$(unique_name "$0/$(basename "$file")")"
-        done
-    ' "$output_dir" {} +
-    exit
-fi
+    if [ $depth -gt $max_depth ] && [ $max_depth -gt 0 ]; then
+        overflow=$((depth - max_depth))
+        rel_path=$(echo "$rel_path" | awk -F'/' -v o="$overflow" '{
+            for (i=o+1; i<=NF; i++) printf "%s%s", $i, (i<NF?"/":"")
+        }')
+    fi
 
-find "$input_dir" -type f -exec sh -c '
-    for file; do
-        rel_path="${file#$3/}"
-        depth=$(tr -cd / <<< "$rel_path" | wc -c)
-        ((depth++))
-        ((depth > $1)) && rel_path=$(echo "$rel_path" | awk -F/ -v o=$((depth-$1)) "{for(i=o+1;i<=NF;i++)printf \$i (i<NF?\"/\":\"\")}")
-        dest="$2/$rel_path"
-        mkdir -p "$(dirname "$dest")"
-        cp "$file" "$(unique_name "$dest")"
+    dest="$output_dir/$rel_path"
+    mkdir -p "$(dirname "$dest")"
+    
+    counter=1
+    while [ -e "$dest" ]; do
+        if [[ "$dest" =~ \.[^./]+$ ]]; then
+            dest="${dest%.*}_${counter}.${dest##*.}"
+        else
+            dest="${dest}_${counter}"
+        fi
+        counter=$((counter + 1))
     done
-' "$max_depth" "$output_dir" "$input_dir" {} +
+
+    cp "$file" "$dest"
+done
