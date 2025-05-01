@@ -4,25 +4,27 @@ input_dir="$1"
 output_dir="$2"
 
 if [ $# -eq 4 ] && [ "$3" == "--max_depth" ] && [[ "$4" =~ ^[0-9]+$ ]]; then
-    max_depth="$4"
-
-    find "$input_dir" -type f -print0 | while IFS= read -r -d $'\0' file; do
-        rel_path="${file#$input_dir/}"
-        depth=$(tr -cd '/' <<< "$rel_path" | wc -c)
-        depth=$((depth + 1))
+    level_limit="$4"
+    while IFS= read -r -d '' source_file; do
+        relative_path="${source_file#$input_dir/}"
         
-        if [ $depth -gt $max_depth ]; then
-            overflow=$((depth - max_depth))
-            rel_path=$(echo "$rel_path" | awk -F'/' -v o="$overflow" '{
-                for (i=o+1; i<=NF; i++) printf "%s%s", $i, (i<NF?"/":"")
-            }')
-        fi
+        IFS='/' path_segments=($relative_path)
         
-        dest="$output_dir/$rel_path"
-        mkdir -p "$(dirname "$dest")"
-        cp "$file" "$dest"
-    done
+        reconstructed_path=""
+        current_depth=0
+        for segment in "${path_segments[@]}"; do
+            if [ $current_depth -lt $level_limit ]; then
+                reconstructed_path="${reconstructed_path:+$reconstructed_path/}$segment"
+                current_depth=$((current_depth + 1))
+            else
+                break
+            fi
+        done
+        
+        target_path="$output_dir/$reconstructed_path"
+        mkdir -p "${target_path%/*}" 2>/dev/null
+        cp "$source_file" "$target_path" 2>/dev/null
+    done < <(find "$input_dir" -type f -print0)
 else
-
-    find "$input_dir" -type f -exec cp {} "$output_dir" \;
+    find "$input_dir" -type f -exec cp --parents {} "$output_dir" \; 2>/dev/null
 fi
