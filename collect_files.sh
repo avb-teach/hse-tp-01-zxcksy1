@@ -2,27 +2,31 @@
 
 input_dir="$1"
 output_dir="$2"
+depth_limit=""
 
-if [ $# -eq 4 ] && [ "$3" == "--max_depth" ] && [[ "$4" =~ ^[0-9]+$ ]]; then
-    max_depth="$4"
+if [[ $# -ge 4 && "$3" == "--max_depth" && "$4" =~ ^[0-9]+$ ]]; then
+    depth_limit="$4"
+fi
 
-    while IFS= read -r -d '' file; do
-        rel_path="${file#$input_dir}"
-        rel_path="${rel_path#/}"
+if [[ -n "$depth_limit" ]]; then
+    while IFS= read -r -d '' file_path; do
+        relative_path="${file_path#$input_dir/}"
         
-        IFS='/' read -ra path_parts <<< "$rel_path"
-        new_path=""
-        part_count=0
-        for part in "${path_parts[@]}"; do
-            if [ $part_count -lt $max_depth ]; then
-                new_path="${new_path:+$new_path/}$part"
-                part_count=$((part_count + 1))
-            fi
-        done
+        dir_level=$(echo "$relative_path" | awk -F'/' '{print NF}')
         
-        mkdir -p "$output_dir/${new_path%/*}" 2>/dev/null
-        cp "$file" "$output_dir/$new_path" 2>/dev/null
+        if (( dir_level > depth_limit )); then
+            trim_count=$((dir_level - depth_limit))
+            adjusted_path=$(echo "$relative_path" | awk -F'/' -v t="$trim_count" '{
+                for (i=t+1; i<=NF; i++) printf "%s%s", $i, (i<NF?"/":"")
+            }')
+        else
+            adjusted_path="$relative_path"
+        fi
+        
+        target_path="$output_dir/$adjusted_path"
+        mkdir -p "$(dirname "$target_path")"
+        cp -f "$file_path" "$target_path"
     done < <(find "$input_dir" -type f -print0)
 else
-    find "$input_dir" -type f -exec cp {} "$output_dir" \; 2>/dev/null
+    find "$input_dir" -type f -exec cp -f {} "$output_dir" \;
 fi
